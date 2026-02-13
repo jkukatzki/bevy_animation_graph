@@ -102,65 +102,66 @@ fn node_inspector(
 
     let active_node = get_global_state::<ActiveGraphNode>(world).cloned()?;
 
-    with_assets_all(
-        world,
-        [active_node.handle.id()],
-        |world: &mut World, [graph]| -> Option<_> {
-            let node = graph.nodes.get(&active_node.node)?;
+    // Clone the node data out of the graph asset so we release Assets<AnimationGraph>
+    // back to the world before rendering the inspector UI. This is necessary because
+    // `with_assets_all` uses `resource_scope` which temporarily removes Assets<AnimationGraph>
+    // from the world, which prevents AssetPickerInspector<AnimationGraph> from being able
+    // to display the Handle<AnimationGraph> field (e.g. in GraphNode).
+    let node_clone = world.resource_scope::<Assets<AnimationGraph>, _>(|_, graph_assets| {
+        let graph = graph_assets.get(&active_node.handle)?;
+        graph.nodes.get(&active_node.node).cloned()
+    })?;
 
-            let node_buffer_id = ui.id().with("graph node buffer");
+    let node_buffer_id = ui.id().with("graph node buffer");
 
-            let node_buffer = ctx.buffers.get_mut_or_insert_with_condition(
-                node_buffer_id,
-                |n: &AnimationNode| n.id != active_node.node,
-                || node.clone(),
-            );
+    let node_buffer = ctx.buffers.get_mut_or_insert_with_condition(
+        node_buffer_id,
+        |n: &AnimationNode| n.id != active_node.node,
+        || node_clone.clone(),
+    );
 
-            let response = ui.text_edit_singleline(&mut node_buffer.name);
-            let mut clear = false;
+    let response = ui.text_edit_singleline(&mut node_buffer.name);
+    let mut clear = false;
 
-            if response.lost_focus() {
-                ctx.editor_actions
-                    .push(EditorAction::Graph(GraphAction::RenameNode(RenameNode {
-                        graph: active_node.handle.clone(),
-                        node: active_node.node,
-                        new_name: node_buffer.name.clone(),
-                    })));
-                clear = true;
-            }
+    if response.lost_focus() {
+        ctx.editor_actions
+            .push(EditorAction::Graph(GraphAction::RenameNode(RenameNode {
+                graph: active_node.handle.clone(),
+                node: active_node.node,
+                new_name: node_buffer.name.clone(),
+            })));
+        clear = true;
+    }
 
-            let editor = if let Some(editable) = world
-                .resource::<AppTypeRegistry>()
-                .0
-                .clone()
-                .read()
-                .get_type_data::<ReflectEditable>(node.inner.type_id())
-            {
-                (editable.get_editor)(node.inner.as_ref())
-            } else {
-                Box::new(ReflectNodeEditor)
-            };
+    let editor = if let Some(editable) = world
+        .resource::<AppTypeRegistry>()
+        .0
+        .clone()
+        .read()
+        .get_type_data::<ReflectEditable>(node_clone.inner.type_id())
+    {
+        (editable.get_editor)(node_clone.inner.as_ref())
+    } else {
+        Box::new(ReflectNodeEditor)
+    };
 
-            let inner_edit_response = editor.show_dyn(ui, world, node_buffer.inner.as_mut());
+    let inner_edit_response = editor.show_dyn(ui, world, node_buffer.inner.as_mut());
 
-            if inner_edit_response.changed() {
-                ctx.editor_actions
-                    .push(EditorAction::Graph(GraphAction::EditNode(EditNode {
-                        graph: active_node.handle.clone(),
-                        node: node.id,
-                        new_inner: node_buffer.inner.clone(),
-                    })));
-                clear = true;
-            }
+    if inner_edit_response.changed() {
+        ctx.editor_actions
+            .push(EditorAction::Graph(GraphAction::EditNode(EditNode {
+                graph: active_node.handle.clone(),
+                node: node_clone.id,
+                new_inner: node_buffer.inner.clone(),
+            })));
+        clear = true;
+    }
 
-            if clear {
-                ctx.buffers.clear::<AnimationNode>(node_buffer_id);
-            }
+    if clear {
+        ctx.buffers.clear::<AnimationNode>(node_buffer_id);
+    }
 
-            Some(())
-        },
-    )
-    .flatten()
+    Some(())
 }
 
 fn state_inspector(
