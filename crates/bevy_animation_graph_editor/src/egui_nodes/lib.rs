@@ -158,7 +158,8 @@ impl InteractionState {
         new_state.link_detatch_with_modifier_click =
             link_detatch_with_modifier_click.is_active(&io.modifiers);
 
-        new_state.delete_pressed = io.key_pressed(egui::Key::Delete);
+        new_state.delete_pressed = io.key_pressed(egui::Key::Delete)
+            || (io.modifiers.command && io.key_pressed(egui::Key::Backspace));
 
         new_state
     }
@@ -252,6 +253,17 @@ impl NodesContext {
             egui::Sense::click_and_drag(),
         );
         let hover_pos = response.hover_pos();
+
+        // Handle trackpad scroll-to-pan and pinch-to-zoom
+        if response.contains_pointer() {
+            ui.ctx().input(|io| {
+                // Two-finger scroll on trackpad → pan
+                let scroll_delta = io.smooth_scroll_delta;
+                if scroll_delta != egui::Vec2::ZERO {
+                    self.state.panning += scroll_delta;
+                }
+            });
+        }
 
         ui.ctx().input(|io| {
             self.state.interaction_state = self.state.interaction_state.update(
