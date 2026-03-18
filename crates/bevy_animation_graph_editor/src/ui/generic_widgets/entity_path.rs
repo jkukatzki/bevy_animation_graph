@@ -47,7 +47,8 @@ impl<'a> egui::Widget for EntityPathWidget<'a> {
             });
 
             let text_edit_response = ui.add(
-                egui::TextEdit::singleline(&mut buffer.value).min_size(egui::Vec2::new(350., 0.)),
+                egui::TextEdit::singleline(&mut buffer.value)
+                    .desired_width(ui.available_width()),
             );
 
             let mut final_response = text_edit_response.clone();
