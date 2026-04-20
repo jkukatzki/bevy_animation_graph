@@ -29,6 +29,8 @@ use crate::{
     vec3::rotation_arc::RotationArcNode,
 };
 
+pub use clip_node::sample_graph_clip_into_pose;
+
 pub mod blend_node;
 pub mod blend_space_1d_node;
 pub mod blend_space_node;

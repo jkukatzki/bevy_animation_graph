@@ -326,17 +326,47 @@ impl NodeLike for ClipNode {
 }
 
 #[allow(dead_code)]
-enum CurveValue {
+pub enum CurveValue {
     Translation(Vec3),
     Rotation(Quat),
     Scale(Vec3),
     BoneWeights(Vec<f32>),
 }
 
+/// Sample a [`GraphClip`] at `time` (in seconds) and return a [`Pose`].
+/// This is the same sampling logic used by [`ClipNode`] but exposed as a standalone
+/// helper so that custom nodes can reuse it without duplicating the unsafe curve-sampling code.
+pub fn sample_graph_clip_into_pose(clip: &bevy_animation_graph_core::animation_clip::GraphClip, time: f32) -> Pose {
+    let clip_duration = clip.duration();
+    let clamped_time = time.clamp(0., clip_duration);
+
+    let mut out_pose = Pose {
+        timestamp: time,
+        skeleton: clip.skeleton.clone(),
+        ..Pose::default()
+    };
+
+    for (bone_id, curves) in &clip.curves {
+        let mut bone_pose = BonePose::default();
+        for curve in curves {
+            let value = sample_animation_curve(curve, clamped_time);
+            match value {
+                CurveValue::Translation(t) => bone_pose.translation = Some(t),
+                CurveValue::Rotation(r) => bone_pose.rotation = Some(r),
+                CurveValue::Scale(s) => bone_pose.scale = Some(s),
+                CurveValue::BoneWeights(w) => bone_pose.weights = Some(w),
+            }
+        }
+        out_pose.add_bone(bone_pose, BoneId::from(*bone_id));
+    }
+
+    out_pose
+}
+
 /// Sample the animation at a particular time
 // HACK: We really need some API for sampling animation curves in Bevy outside of the builtin
 // animation flow.
-fn sample_animation_curve(curve: &VariableCurve, time: f32) -> CurveValue {
+pub fn sample_animation_curve(curve: &VariableCurve, time: f32) -> CurveValue {
     let evaluator_id = curve.0.evaluator_id();
     let mut evaluator = curve.0.create_evaluator();
 
