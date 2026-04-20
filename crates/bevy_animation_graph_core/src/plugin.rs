@@ -26,6 +26,7 @@ use crate::{
     animation_graph::{AnimationGraph, loader::AnimationGraphLoader},
     animation_graph_player::AnimationGraphPlayer,
     animation_node::AnimationNode,
+    context::node_resources::GraphNodeResources,
     edge_data::{
         DataSpec, DataValue,
         bone_mask::BoneMask,
@@ -67,6 +68,8 @@ impl Plugin for AnimationGraphCorePlugin {
         self.register_assets(app);
         self.register_types(app);
         self.register_component_hooks(app);
+
+        app.init_resource::<GraphNodeResources>();
 
         app.configure_sets(
             self.physics_schedule,
