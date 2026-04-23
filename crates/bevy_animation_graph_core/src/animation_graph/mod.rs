@@ -49,6 +49,12 @@ pub enum GraphInputPin {
     FsmBuiltin(FsmBuiltinPin),
 }
 
+impl GraphInputPin {
+    pub fn passthrough(pin_id: impl Into<PinId>) -> Self {
+        Self::Passthrough(pin_id.into())
+    }
+}
+
 impl Default for GraphInputPin {
     fn default() -> Self {
         Self::Passthrough("".into())
@@ -755,7 +761,7 @@ impl AnimationGraph {
                     let node = &self.nodes[node_id];
                     let should_debug = node.should_debug;
                     node.duration(
-                        ctx.create_node_context(*node_id, self)
+                        ctx.create_node_context(*node_id)
                             .with_debugging(should_debug),
                     )?;
                     ctx.node_caches().get_duration(*node_id, key)?
@@ -796,7 +802,7 @@ impl AnimationGraph {
                     .get_input_time_update(*node_id, key, target_pin.clone())
                     .or_else(|e| {
                         node.try_get_time(
-                            ctx.create_node_context(node.id, self)
+                            ctx.create_node_context(node.id)
                                 .with_debugging(node.should_debug),
                             target_pin.clone(),
                         )
@@ -847,10 +853,9 @@ impl AnimationGraph {
         deferred_gizmos: &mut DeferredGizmos,
         global_input_data: &HashMap<PinId, DataValue>,
     ) -> Result<HashMap<PinId, DataValue>, GraphError> {
-        context_arena.next_frame();
-
-        let mut ctx = GraphContext::new(
+        let ctx = GraphContext::new(
             context_arena.get_toplevel_id(),
+            self,
             context_arena,
             resources,
             io_env,
@@ -859,7 +864,17 @@ impl AnimationGraph {
             deferred_gizmos,
             global_input_data,
         );
-        ctx.context_mut().query_output_time = QueryOutputTime::Forced(time_update);
+        self.query_with_context(QueryOutputTime::Forced(time_update), ctx)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn query_with_context(
+        &self,
+        query_output_time: QueryOutputTime,
+        mut ctx: GraphContext,
+    ) -> Result<HashMap<PinId, DataValue>, GraphError> {
+        ctx.context_arena.get_mut().next_frame();
+        ctx.context_mut().query_output_time = query_output_time;
         let mut outputs = HashMap::new();
         for (k, _) in self.io_spec.iter_output_data() {
             let out = self.get_data(TargetPin::OutputData(k.clone()), ctx.clone())?;
@@ -886,7 +901,7 @@ impl AnimationGraph {
             )
             .entered();
             node.update(
-                ctx.create_node_context(node.id, self)
+                ctx.create_node_context(node.id)
                     .with_debugging(node.should_debug),
             )?;
         }

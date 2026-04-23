@@ -2,7 +2,9 @@ use bevy::{asset::AssetId, ecs::entity::Entity, platform::collections::HashMap};
 use uuid::Uuid;
 
 use crate::{
-    animation_graph::{AnimationGraph, NodeId, PinId, SourcePin, TargetPin, TimeUpdate},
+    animation_graph::{
+        AnimationGraph, GraphInputPin, NodeId, PinId, SourcePin, TargetPin, TimeUpdate,
+    },
     context::{
         deferred_gizmos::{DeferredGizmoRef, DeferredGizmosContext},
         graph_context::GraphState,
@@ -26,6 +28,8 @@ use crate::{
 #[derive(Clone)]
 pub struct GraphContext<'a> {
     pub context_id: GraphContextId,
+    pub graph: &'a AnimationGraph,
+
     pub root_entity: Entity,
     pub state_key: StateKey,
     pub should_debug: bool,
@@ -43,6 +47,7 @@ impl<'a> GraphContext<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         context_id: GraphContextId,
+        graph: &'a AnimationGraph,
         context_arena: &mut GraphContextArena,
         resources: &'a SystemResources,
         io: &'a dyn GraphIoEnv,
@@ -53,6 +58,7 @@ impl<'a> GraphContext<'a> {
     ) -> Self {
         Self {
             context_id,
+            graph,
             root_entity,
             state_key: StateKey::Default,
             should_debug: false,
@@ -67,14 +73,9 @@ impl<'a> GraphContext<'a> {
 
     /// Decorates a pass context with node data. Usually done by `AnimationGraph` before
     /// passing the context down to a node.
-    pub fn create_node_context(
-        &self,
-        node_id: NodeId,
-        graph: &'a AnimationGraph,
-    ) -> NodeContext<'a> {
+    pub fn create_node_context(&self, node_id: NodeId) -> NodeContext<'a> {
         NodeContext {
             node_id,
-            graph,
             graph_context: self.clone(),
         }
     }
@@ -157,12 +158,17 @@ impl<'a> GraphContext<'a> {
         self.io = GraphIoEnvBox::new(new_io);
         self
     }
+
+    /// Request the cached time update query from the current frame
+    pub fn time_update_fwd(&self, pin: GraphInputPin) -> Result<TimeUpdate, GraphError> {
+        let source_pin = SourcePin::InputTime(pin);
+        self.graph.get_time_update(source_pin, self.clone())
+    }
 }
 
 #[derive(Clone)]
 pub struct NodeContext<'a> {
     pub node_id: NodeId,
-    pub graph: &'a AnimationGraph,
     pub graph_context: GraphContext<'a>,
 }
 
@@ -175,7 +181,9 @@ impl<'a> NodeContext<'a> {
     /// Request an input parameter from the graph
     pub fn data_back(&self, pin_id: impl Into<PinId>) -> Result<DataValue, GraphError> {
         let target_pin = TargetPin::NodeData(self.node_id, pin_id.into());
-        self.graph.get_data(target_pin, self.graph_context.clone())
+        self.graph_context
+            .graph
+            .get_data(target_pin, self.graph_context.clone())
     }
 
     /// Sets the output value at the given pin for the current node. It's up to the caller to
@@ -191,7 +199,8 @@ impl<'a> NodeContext<'a> {
     /// Request the duration of an input pose pin.
     pub fn duration_back(&self, pin_id: impl Into<PinId>) -> Result<DurationData, GraphError> {
         let target_pin = TargetPin::NodeTime(self.node_id, pin_id.into());
-        self.graph
+        self.graph_context
+            .graph
             .get_duration(target_pin, self.graph_context.clone())
     }
 
@@ -225,7 +234,8 @@ impl<'a> NodeContext<'a> {
     /// Request the cached time update query from the current frame
     pub fn time_update_fwd(&self) -> Result<TimeUpdate, GraphError> {
         let source_pin = SourcePin::NodeTime(self.node_id);
-        self.graph
+        self.graph_context
+            .graph
             .get_time_update(source_pin, self.graph_context.clone())
     }
 

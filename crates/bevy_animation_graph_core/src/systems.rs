@@ -151,8 +151,8 @@ pub fn animation_player(
     animation_players.par_iter_mut().for_each(|(root, player)| {
         run_animation_player(root, player, &time, &sysres);
     });
-    animation_players.par_iter_mut().for_each(|(root, player)| {
-        debug_draw_animation_players(player, root, &sysres);
+    animation_players.par_iter_mut().for_each(|(_, player)| {
+        debug_draw_animation_players(player, &sysres);
     });
 }
 
@@ -243,10 +243,9 @@ pub fn apply_animation_to_targets(
 
 pub fn debug_draw_animation_players(
     mut player: Mut<AnimationGraphPlayer>,
-    root_entity: Entity,
     system_resources: &SystemResources,
 ) {
-    player.debug_draw_bones(system_resources, root_entity);
+    player.debug_draw_bones(system_resources);
 }
 
 /// Update `weights` based on weights in `keyframe` with a linear interpolation

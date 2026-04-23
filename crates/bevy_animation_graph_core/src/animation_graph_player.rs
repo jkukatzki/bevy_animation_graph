@@ -15,10 +15,11 @@ use crate::{
     context::{
         deferred_gizmos::{
             CustomRelativeDrawCommand, CustomRelativeDrawCommandReference, DeferredGizmos,
+            DeferredGizmosContext,
         },
         graph_context_arena::GraphContextArena,
         io_env::IoOverrides,
-        new_context::GraphContext,
+        pose_fallback::PoseFallbackContext,
         system_resources::SystemResources,
     },
     edge_data::{
@@ -29,6 +30,7 @@ use crate::{
     pose::{BoneId, Pose, RootMotionDelta},
     ragdoll::{bone_mapping::RagdollBoneMap, definition::Ragdoll, spawning::SpawnedRagdoll},
     skeleton::Skeleton,
+    space_conversion::SpaceConversionContext,
 };
 
 #[derive(Default, Reflect, Clone, Copy)]
@@ -256,11 +258,7 @@ impl AnimationGraphPlayer {
         });
     }
 
-    pub(crate) fn debug_draw_bones(
-        &mut self,
-        system_resources: &SystemResources,
-        root_entity: Entity,
-    ) {
+    pub(crate) fn debug_draw_bones(&mut self, system_resources: &SystemResources) {
         if self.debug_draw_bones.is_empty() && self.debug_draw_custom.is_empty() {
             return;
         }
@@ -270,32 +268,29 @@ impl AnimationGraphPlayer {
 
         let skeleton_handle = self.skeleton.clone();
 
-        let context_arena = self.context_arena.as_mut().unwrap();
+        let mut gizmos = DeferredGizmosContext {
+            gizmos: &mut self.deferred_gizmos,
+            resources: system_resources,
+            entity_map: &self.entity_map,
+            space_conversion: SpaceConversionContext {
+                pose_fallback: PoseFallbackContext {
+                    entity_map: &self.entity_map,
+                    resources: system_resources,
+                    fallback_to_identity: false,
+                },
+            },
+        };
 
-        let ctx = GraphContext::new(
-            context_arena.get_toplevel_id(),
-            context_arena,
-            system_resources,
-            &self.io_overrides,
-            root_entity,
-            &self.entity_map,
-            &mut self.deferred_gizmos,
-            &self.global_input_data,
-        )
-        .with_debugging(true);
-
-        let Some(skeleton) = ctx.resources.skeleton_assets.get(&skeleton_handle) else {
+        let Some(skeleton) = system_resources.skeleton_assets.get(&skeleton_handle) else {
             return;
         };
 
         for (bone_id, color, draw_children) in bones.drain(..) {
-            ctx.gizmos()
-                .bone_gizmo(bone_id, color.into(), draw_children, skeleton, None);
+            gizmos.bone_gizmo(bone_id, color.into(), draw_children, skeleton, None);
         }
 
         for custom_cmd in custom_gizmos.drain(..) {
-            ctx.gizmos()
-                .relative_custom_gizmo(custom_cmd, skeleton, None);
+            gizmos.relative_custom_gizmo(custom_cmd, skeleton, None);
         }
     }
 
