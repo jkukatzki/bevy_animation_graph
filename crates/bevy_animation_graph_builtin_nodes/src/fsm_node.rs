@@ -34,7 +34,7 @@ impl NodeLike for FsmNode {
             .resources
             .state_machine_assets
             .get(&self.fsm)
-            .unwrap();
+            .ok_or(GraphError::FsmAssetMissing)?;
         fsm.get_low_level_fsm().update(ctx)?;
 
         Ok(())
@@ -46,7 +46,7 @@ impl NodeLike for FsmNode {
             .resources
             .state_machine_assets
             .get(&self.fsm)
-            .unwrap();
+            .ok_or(GraphError::FsmAssetMissing)?;
         fsm.get_low_level_fsm().time_update(ctx, pin)
     }
 

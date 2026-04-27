@@ -350,9 +350,13 @@ impl LowLevelStateMachine {
             }),
         );
 
-        let sub_ctx = ctx
+        let mut sub_ctx = ctx
             .create_child_context(state.graph.id(), Some(state.id.clone()))
             .with_io(&sub_io_env);
+        // Update sub_ctx.graph to the state's actual graph so that nodes inside
+        // it (e.g. a nested FsmNode) resolve time edges against the correct graph
+        // and not the grandparent graph.
+        sub_ctx.graph = graph;
 
         for (id, _) in graph.io_spec.iter_output_data() {
             let target_pin = TargetPin::OutputData(id.clone());
@@ -423,9 +427,10 @@ impl LowLevelStateMachine {
             }),
         );
 
-        let sub_ctx = ctx
+        let mut sub_ctx = ctx
             .create_child_context(state.graph.id(), Some(state.id.clone()))
             .with_io(&sub_io_env);
+        sub_ctx.graph = graph;
 
         let source_pin = SourcePin::InputTime(GraphInputPin::Passthrough(pin));
         let time_update = graph.get_time_update(source_pin, sub_ctx.clone())?;
@@ -508,11 +513,12 @@ impl<'a> FsmIoEnv<'a> {
             current_state_role: next_state_role,
         };
 
-        let sub_ctx = self
+        let mut sub_ctx = self
             .node_context
             .create_child_context(graph_handle.id(), Some(next_state))
             .with_state_key(ctx.state_key)
             .with_io(&sub_graph_io);
+        sub_ctx.graph = graph;
 
         graph.get_data(TargetPin::OutputData(forward_pin_id), sub_ctx)
     }
@@ -560,11 +566,12 @@ impl<'a> FsmIoEnv<'a> {
             current_state_role: next_state_role,
         };
 
-        let sub_ctx = self
+        let mut sub_ctx = self
             .node_context
             .create_child_context(graph_handle.id(), Some(state))
             .with_state_key(ctx.state_key)
             .with_io(&sub_graph_io);
+        sub_ctx.graph = graph;
 
         graph.get_duration(TargetPin::OutputTime, sub_ctx)
     }
@@ -602,11 +609,12 @@ impl<'a> FsmIoEnv<'a> {
                 current_state_role: next_state_role,
             };
 
-            let sub_ctx = self
+            let mut sub_ctx = self
                 .node_context
                 .create_child_context(graph_handle.id(), Some(next_state))
                 .with_state_key(ctx.state_key)
                 .with_io(&sub_graph_io);
+            sub_ctx.graph = graph;
 
             graph.get_time_update(
                 SourcePin::InputTime(match self.current_state_role {
