@@ -7,7 +7,7 @@ use bevy::{
     platform::collections::HashMap,
     reflect::prelude::*,
 };
-use loader::GraphClipSource;
+use loader::{GraphClipSource, PendingGltfSource};
 use serde::{Deserialize, Serialize};
 
 use super::{event_track::EventTrack, id, skeleton::Skeleton};
@@ -167,6 +167,11 @@ pub struct GraphClip {
     pub duration: f32,
     pub skeleton: Handle<Skeleton>,
     pub event_tracks: HashMap<String, EventTrack>,
+    /// Set by [`loader::GraphClipLoader`] when the source is [`GraphClipSource::GltfNamed`].
+    /// The `resolve_pending_graph_clips` system populates `curves` and `duration` once the
+    /// referenced GLTF asset is ready, then clears this field to `None`.
+    #[reflect(ignore)]
+    pub pending_gltf_source: Option<PendingGltfSource>,
 }
 
 impl GraphClip {
@@ -218,6 +223,7 @@ impl GraphClip {
             skeleton,
             event_tracks,
             source,
+            pending_gltf_source: None,
         }
     }
 }
