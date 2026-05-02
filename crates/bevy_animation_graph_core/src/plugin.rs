@@ -1,12 +1,16 @@
 #[cfg(feature = "physics_avian")]
 use avian3d::prelude::PhysicsSystems;
 use bevy::{
+    animation::AnimationClip,
     app::{App, Plugin, PreUpdate},
-    asset::AssetApp,
+    asset::{AssetApp, AssetEvent, Assets},
     ecs::{
         intern::Interned,
+        message::MessageReader,
         schedule::{IntoScheduleConfigs, ScheduleLabel, SystemSet},
+        system::{Res, ResMut},
     },
+    gltf::Gltf,
     reflect::prelude::ReflectDefault,
     transform::TransformSystems,
 };
@@ -100,6 +104,7 @@ impl Plugin for AnimationGraphCorePlugin {
         }
 
         app.add_systems(PreUpdate, spawn_animated_scenes);
+        app.add_systems(PreUpdate, resolve_pending_graph_clips);
 
         app.add_systems(
             self.physics_schedule,
@@ -214,5 +219,87 @@ impl AnimationGraphCorePlugin {
                     world.commands().entity(spawned_ragdoll).despawn();
                 }
             });
+    }
+}
+
+/// Resolves [`GraphClip`] assets whose curve data was deferred at load time.
+///
+/// When `GraphClipLoader` encounters a `GltfNamed` source it registers the
+/// GLTF as a normal (deduplicated) Bevy dependency and stores a
+/// [`loader::PendingGltfSource`] on the clip.  Once the GLTF asset is fully
+/// loaded, this system extracts the named animation curve data and clears the
+/// pending field.
+pub fn resolve_pending_graph_clips(
+    mut graph_clips: ResMut<Assets<GraphClip>>,
+    gltf_assets: Res<Assets<Gltf>>,
+    anim_clips: Res<Assets<AnimationClip>>,
+    mut gltf_events: MessageReader<AssetEvent<Gltf>>,
+) {
+    // Only run when at least one GLTF has newly finished loading.
+    let any_gltf_loaded = gltf_events.read().any(|e| {
+        matches!(
+            e,
+            AssetEvent::Added { .. } | AssetEvent::LoadedWithDependencies { .. }
+        )
+    });
+    if !any_gltf_loaded {
+        return;
+    }
+
+    // Collect the IDs of clips that still need resolution so we can mutate
+    // `graph_clips` afterwards without a borrow conflict.
+    let pending_ids: Vec<_> = graph_clips
+        .iter()
+        .filter(|(_, clip)| clip.pending_gltf_source.is_some())
+        .map(|(id, _)| id)
+        .collect();
+
+    for clip_id in pending_ids {
+        let Some(clip) = graph_clips.get(clip_id) else {
+            continue;
+        };
+        let Some(pending) = &clip.pending_gltf_source else {
+            continue;
+        };
+
+        let Some(gltf) = gltf_assets.get(pending.gltf_handle.id()) else {
+            // GLTF not ready yet — will be retried next time a GLTF loads.
+            continue;
+        };
+
+        let anim_name = pending.animation_name.clone();
+        let Some(clip_handle) = gltf
+            .named_animations
+            .get(anim_name.as_str())
+        else {
+            bevy::log::warn!(
+                "resolve_pending_graph_clips: animation '{}' not found in GLTF",
+                anim_name
+            );
+            // Clear the pending field to avoid infinite retries.
+            if let Some(clip) = graph_clips.get_mut(clip_id) {
+                clip.pending_gltf_source = None;
+            }
+            continue;
+        };
+
+        let Some(bevy_clip) = anim_clips.get(clip_handle.id()) else {
+            // AnimationClip sub-asset not yet available; retry next event.
+            continue;
+        };
+
+        let curves = bevy_clip.curves().clone();
+        let duration = bevy_clip.duration();
+
+        let clip = graph_clips.get_mut(clip_id).unwrap();
+        clip.curves = curves;
+        clip.duration = duration;
+        clip.pending_gltf_source = None;
+
+        bevy::log::debug!(
+            "resolve_pending_graph_clips: resolved clip '{}' (duration={:.2}s)",
+            anim_name,
+            duration,
+        );
     }
 }

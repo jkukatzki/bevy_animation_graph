@@ -1,5 +1,5 @@
 use bevy::{
-    asset::{AssetLoader, AssetPath, LoadContext, io::Reader},
+    asset::{AssetLoader, AssetPath, Handle, LoadContext, io::Reader},
     gltf::Gltf,
     platform::collections::HashMap,
     reflect::{Reflect, TypePath},
@@ -25,6 +25,18 @@ pub struct GraphClipSerial {
     pub event_tracks: HashMap<String, EventTrack>,
 }
 
+/// Pending GltfNamed resolution: the `GraphClip` has been loaded but its curve
+/// data has not been extracted yet because the source GLTF is loaded as a
+/// deferred dependency (to avoid one HTTP request per clip).
+///
+/// The `resolve_pending_graph_clips` system in `AnimationGraphCorePlugin`
+/// watches for the GLTF to become available and then populates the clip.
+#[derive(Clone, Debug)]
+pub struct PendingGltfSource {
+    pub gltf_handle: Handle<Gltf>,
+    pub animation_name: String,
+}
+
 #[derive(Default, TypePath)]
 pub struct GraphClipLoader;
 
@@ -43,49 +55,31 @@ impl AssetLoader for GraphClipLoader {
         reader.read_to_end(&mut bytes).await?;
         let serial: GraphClipSerial = ron::de::from_bytes(&bytes)?;
 
-        let bevy_clip = match &serial.source {
+        let skeleton = load_context.loader().load(serial.skeleton);
+
+        let clip_mine = match &serial.source {
             GraphClipSource::GltfNamed {
                 path,
                 animation_name,
             } => {
-                let gltf_loaded_asset = load_context
-                    .loader()
-                    .immediate()
-                    .with_unknown_type()
-                    .load(path)
-                    .await?;
-                let gltf: &Gltf = gltf_loaded_asset.get().unwrap();
-
-                let Some(clip_handle) = gltf
-                    .named_animations
-                    .get(&animation_name.clone().into_boxed_str())
-                else {
-                    return Err(AssetLoaderError::GltfMissingLabel(animation_name.clone()));
-                };
-
-                let Some(clip_path) = clip_handle.path() else {
-                    return Err(AssetLoaderError::GltfMissingLabel(animation_name.clone()));
-                };
-
-                let clip_bevy: bevy::animation::AnimationClip = gltf_loaded_asset
-                    .get_labeled(clip_path.label_cow().unwrap())
-                    .unwrap()
-                    .get::<bevy::animation::AnimationClip>()
-                    .unwrap()
-                    .clone();
-
-                clip_bevy
+                // Load the GLTF as a deferred dependency so the asset server
+                // deduplicates it across all animation clips referencing the
+                // same GLB file.  Curve data is populated later by the
+                // `resolve_pending_graph_clips` system once the GLTF is ready.
+                let gltf_handle: Handle<Gltf> = load_context.loader().load(path.clone());
+                GraphClip {
+                    curves: Default::default(),
+                    duration: 0.0,
+                    skeleton,
+                    event_tracks: serial.event_tracks,
+                    source: Some(serial.source.clone()),
+                    pending_gltf_source: Some(PendingGltfSource {
+                        gltf_handle,
+                        animation_name: animation_name.clone(),
+                    }),
+                }
             }
         };
-
-        let skeleton = load_context.loader().load(serial.skeleton);
-
-        let clip_mine = GraphClip::from_bevy_clip(
-            bevy_clip,
-            skeleton,
-            serial.event_tracks,
-            Some(serial.source.clone()),
-        );
 
         Ok(clip_mine)
     }
