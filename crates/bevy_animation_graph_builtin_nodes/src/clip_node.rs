@@ -86,6 +86,19 @@ impl ClipNode {
 
 impl NodeLike for ClipNode {
     fn duration(&self, mut ctx: NodeContext) -> Result<(), GraphError> {
+        // If the clip exists but is still pending GLTF resolution, report None so
+        // parent nodes (e.g. LoopNode) know to wait instead of computing with
+        // duration = 0, which causes rem_euclid(0.0) = NaN to propagate.
+        if let Some(clip) = ctx
+            .graph_context
+            .resources
+            .graph_clip_assets
+            .get(&self.clip)
+        {
+            if clip.pending_gltf_source.is_some() {
+                return Ok(());
+            }
+        }
         ctx.set_duration_fwd(Some(self.clip_duration(&ctx)?));
         Ok(())
     }
@@ -103,6 +116,19 @@ impl NodeLike for ClipNode {
             ctx.set_data_fwd(Self::OUT_POSE, DataValue::Pose(Pose::default()));
             return Ok(());
         };
+
+        // Clip loaded but curves not yet extracted from GLTF — return empty pose.
+        if clip.pending_gltf_source.is_some() {
+            let time_update = ctx.time_update_fwd()?;
+            let _ = time_update; // consume the input
+            ctx.set_time(0.0);
+            ctx.set_data_fwd(Self::OUT_POSE, DataValue::Pose(Pose::default()));
+            ctx.set_data_fwd(
+                Self::OUT_EVENT_QUEUE,
+                DataValue::EventQueue(EventQueue::default()),
+            );
+            return Ok(());
+        }
 
         let time_update = ctx.time_update_fwd()?;
         let time = self.update_time(&ctx, &time_update)?;
@@ -339,7 +365,10 @@ pub enum CurveValue {
 /// Sample a [`GraphClip`] at `time` (in seconds) and return a [`Pose`].
 /// This is the same sampling logic used by [`ClipNode`] but exposed as a standalone
 /// helper so that custom nodes can reuse it without duplicating the unsafe curve-sampling code.
-pub fn sample_graph_clip_into_pose(clip: &bevy_animation_graph_core::animation_clip::GraphClip, time: f32) -> Pose {
+pub fn sample_graph_clip_into_pose(
+    clip: &bevy_animation_graph_core::animation_clip::GraphClip,
+    time: f32,
+) -> Pose {
     let clip_duration = clip.duration();
     let clamped_time = time.clamp(0., clip_duration);
 

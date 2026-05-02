@@ -1,4 +1,5 @@
 use bevy::app::{App, Plugin};
+pub use clip_node::sample_graph_clip_into_pose;
 
 use crate::{
     blend_node::BlendNode,
@@ -28,8 +29,6 @@ use crate::{
     twoboneik_node::TwoBoneIKNode,
     vec3::rotation_arc::RotationArcNode,
 };
-
-pub use clip_node::sample_graph_clip_into_pose;
 
 pub mod blend_node;
 pub mod blend_space_1d_node;
