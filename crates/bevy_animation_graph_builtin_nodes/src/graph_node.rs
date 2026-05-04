@@ -41,7 +41,7 @@ impl NodeLike for GraphNode {
         };
 
         let sub_ctx = ctx
-            .create_child_context(self.graph.id(), None)
+            .create_child_context(self.graph.id(), graph, None)
             .with_io(&sub_ctx_io);
 
         if graph.io_spec.has_output_time() {
@@ -70,7 +70,7 @@ impl NodeLike for GraphNode {
         };
 
         let mut sub_ctx = ctx
-            .create_child_context(self.graph.id(), None)
+            .create_child_context(self.graph.id(), graph, None)
             .with_io(&sub_ctx_io);
 
         if graph.io_spec.has_output_time() {

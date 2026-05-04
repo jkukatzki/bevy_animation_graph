@@ -292,6 +292,8 @@ impl<'a> NodeContext<'a> {
     pub fn create_child_context(
         &self,
         subgraph_id: AssetId<AnimationGraph>,
+        // We pass the subgraph to avoid a wasted asset lookup in the hot path
+        subgraph: &'a AnimationGraph,
         fsm_state: Option<LowLevelStateId>,
     ) -> GraphContext<'a> {
         let subctx_id = SubContextId {
@@ -306,7 +308,25 @@ impl<'a> NodeContext<'a> {
                 .context_arena
                 .get_mut()
                 .get_sub_context_or_insert_default(subctx_id, subgraph_id),
+            graph: subgraph,
             ..self.graph_context.clone()
         }
+    }
+
+    pub fn create_child_context_id(
+        &self,
+        subgraph_id: AssetId<AnimationGraph>,
+        fsm_state: Option<LowLevelStateId>,
+    ) -> GraphContextId {
+        let subctx_id = SubContextId {
+            ctx_id: self.graph_context.context_id,
+            node_id: self.node_id.to_owned(),
+            state_id: fsm_state,
+        };
+
+        self.graph_context
+            .context_arena
+            .get_mut()
+            .get_sub_context_or_insert_default(subctx_id, subgraph_id)
     }
 }

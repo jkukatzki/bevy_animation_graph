@@ -264,9 +264,15 @@ impl LowLevelStateMachine {
         }
 
         if let Some((graph, state)) = should_clear {
-            ctx.create_child_context(graph, Some(state))
-                .node_states_mut()
-                .clear();
+            let subctx_id = ctx.create_child_context_id(graph, Some(state));
+            if let Some(graph_state) = ctx
+                .graph_context
+                .context_arena
+                .get_mut()
+                .get_context_mut(subctx_id)
+            {
+                graph_state.node_states.clear();
+            }
         }
 
         Ok(())
@@ -351,7 +357,7 @@ impl LowLevelStateMachine {
         );
 
         let sub_ctx = ctx
-            .create_child_context(state.graph.id(), Some(state.id.clone()))
+            .create_child_context(state.graph.id(), graph, Some(state.id.clone()))
             .with_io(&sub_io_env);
 
         for (id, _) in graph.io_spec.iter_output_data() {
@@ -424,7 +430,7 @@ impl LowLevelStateMachine {
         );
 
         let sub_ctx = ctx
-            .create_child_context(state.graph.id(), Some(state.id.clone()))
+            .create_child_context(state.graph.id(), graph, Some(state.id.clone()))
             .with_io(&sub_io_env);
 
         let source_pin = SourcePin::InputTime(GraphInputPin::Passthrough(pin));
@@ -510,7 +516,7 @@ impl<'a> FsmIoEnv<'a> {
 
         let sub_ctx = self
             .node_context
-            .create_child_context(graph_handle.id(), Some(next_state))
+            .create_child_context(graph_handle.id(), graph, Some(next_state))
             .with_state_key(ctx.state_key)
             .with_io(&sub_graph_io);
 
@@ -562,7 +568,7 @@ impl<'a> FsmIoEnv<'a> {
 
         let sub_ctx = self
             .node_context
-            .create_child_context(graph_handle.id(), Some(state))
+            .create_child_context(graph_handle.id(), graph, Some(state))
             .with_state_key(ctx.state_key)
             .with_io(&sub_graph_io);
 
@@ -604,7 +610,7 @@ impl<'a> FsmIoEnv<'a> {
 
             let sub_ctx = self
                 .node_context
-                .create_child_context(graph_handle.id(), Some(next_state))
+                .create_child_context(graph_handle.id(), graph, Some(next_state))
                 .with_state_key(ctx.state_key)
                 .with_io(&sub_graph_io);
 
