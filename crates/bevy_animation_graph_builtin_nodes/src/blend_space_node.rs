@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_animation_graph_core::{
     animation_graph::TimeUpdate,
-    animation_node::{EditProxy, NodeLike, ReflectEditProxy, ReflectNodeLike},
+    animation_node::{NodeLike, ReflectNodeLike},
     context::{new_context::NodeContext, spec_context::SpecContext},
     edge_data::DataSpec,
     errors::GraphError,
@@ -34,7 +34,7 @@ pub struct PointElement {
 /// This node is useful, for example, to blend between directional movement and strafe animations
 /// in a shooter game.
 #[derive(Reflect, Clone, Debug, Default)]
-#[reflect(Default, NodeLike, EditProxy)]
+#[reflect(Default, NodeLike, Serialize, Deserialize)]
 #[type_path = "bevy_animation_graph::builtin_nodes"]
 pub struct BlendSpaceNode {
     pub mode: BlendMode,
@@ -223,31 +223,49 @@ impl NodeLike for BlendSpaceNode {
 }
 
 #[derive(Clone, Reflect, Serialize, Deserialize)]
-pub struct FlipLRProxy {
+pub struct BlendSpaceSerial {
     pub mode: BlendMode,
     pub sync_mode: BlendSyncMode,
     pub points: Vec<PointElement>,
 }
 
-impl EditProxy for BlendSpaceNode {
-    type Proxy = FlipLRProxy;
-
-    fn update_from_proxy(proxy: &Self::Proxy) -> Self {
+impl From<BlendSpaceSerial> for BlendSpaceNode {
+    fn from(value: BlendSpaceSerial) -> Self {
         Self {
-            mode: proxy.mode,
-            sync_mode: proxy.sync_mode.clone(),
-            points: proxy.points.clone(),
+            mode: value.mode,
+            sync_mode: value.sync_mode.clone(),
+            points: value.points.clone(),
             triangulation: Triangulation::from_points_delaunay(
-                proxy.points.clone().into_iter().map(|x| x.point).collect(),
+                value.points.clone().into_iter().map(|x| x.point).collect(),
             ),
         }
     }
+}
 
-    fn make_proxy(&self) -> Self::Proxy {
-        Self::Proxy {
-            mode: self.mode,
-            sync_mode: self.sync_mode.clone(),
-            points: self.points.clone(),
+impl From<BlendSpaceNode> for BlendSpaceSerial {
+    fn from(value: BlendSpaceNode) -> Self {
+        Self {
+            mode: value.mode,
+            sync_mode: value.sync_mode.clone(),
+            points: value.points.clone(),
         }
+    }
+}
+
+impl Serialize for BlendSpaceNode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        BlendSpaceSerial::from(self.clone()).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for BlendSpaceNode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(BlendSpaceSerial::deserialize(deserializer)?.into())
     }
 }

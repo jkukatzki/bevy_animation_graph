@@ -47,10 +47,10 @@ impl PatternMapperSerial {
     pub fn to_value(&self) -> Result<PatternMapper, regex::Error> {
         let regex = Regex::new(&format!(
             "({})({}|{})({})",
-            &self.pattern_before,
+            self.pattern_before,
             escape(&self.key_1),
             escape(&self.key_2),
-            &self.pattern_after,
+            self.pattern_after,
         ))?;
 
         Ok(PatternMapper {

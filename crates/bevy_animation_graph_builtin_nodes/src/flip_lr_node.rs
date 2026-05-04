@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_animation_graph_core::{
-    animation_node::{EditProxy, NodeLike, ReflectNodeLike},
+    animation_node::{NodeLike, ReflectNodeLike},
     context::{new_context::NodeContext, spec_context::SpecContext},
     edge_data::DataSpec,
     errors::GraphError,
@@ -8,7 +8,7 @@ use bevy_animation_graph_core::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Reflect, Clone, Debug, Serialize, Deserialize)]
+#[derive(Reflect, Clone, Debug)]
 #[reflect(Default, NodeLike, Serialize, Deserialize)]
 #[type_path = "bevy_animation_graph::builtin_nodes"]
 pub struct FlipLRNode {
@@ -73,24 +73,46 @@ impl NodeLike for FlipLRNode {
     }
 }
 
-#[derive(Clone, Reflect)]
+#[derive(Clone, Reflect, Serialize, Deserialize)]
 pub struct FlipLRProxy {
     pub config: SymmetryConfigSerial,
 }
 
-impl EditProxy for FlipLRNode {
-    type Proxy = FlipLRProxy;
-
-    fn update_from_proxy(proxy: &Self::Proxy) -> Self {
-        Self {
-            // TODO: This will fail if the regex is incorrect, may cause some editor crashes
-            config: proxy.config.to_value().unwrap(),
+impl From<&FlipLRNode> for FlipLRProxy {
+    fn from(value: &FlipLRNode) -> Self {
+        FlipLRProxy {
+            config: SymmetryConfigSerial::from_value(&value.config),
         }
     }
+}
 
-    fn make_proxy(&self) -> Self::Proxy {
-        Self::Proxy {
-            config: SymmetryConfigSerial::from_value(&self.config),
-        }
+impl TryFrom<&FlipLRProxy> for FlipLRNode {
+    type Error = regex::Error;
+
+    fn try_from(value: &FlipLRProxy) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
+            config: value.config.to_value()?,
+        })
+    }
+}
+
+impl Serialize for FlipLRNode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        FlipLRProxy::from(self).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for FlipLRNode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let ser = FlipLRProxy::deserialize(deserializer)?;
+
+        Self::try_from(&ser)
+            .map_err(|_| serde::de::Error::custom("Failed to parse regular expression"))
     }
 }

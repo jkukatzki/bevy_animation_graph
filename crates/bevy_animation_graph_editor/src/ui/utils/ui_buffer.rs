@@ -19,7 +19,6 @@ where
         {
             buffer
         } else {
-            println!("Buffer invalidated");
             Self::new(ui, meta, value)
         }
     }

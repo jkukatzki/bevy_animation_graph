@@ -11,7 +11,10 @@ use bevy::{
     },
 };
 
-use crate::ui::{generic_widgets::picker::PickerWidget, reflect_lib::list_handler::handle_list};
+use crate::ui::{
+    generic_widgets::picker::PickerWidget, reflect_lib::list_handler::handle_list,
+    utils::maybe_response::MaybeResponse,
+};
 
 pub mod default_registry;
 pub mod list_handler;
@@ -82,8 +85,8 @@ impl<'a> ReflectWidgetContext<'a> {
             ));
         };
 
-        ui.scope(|ui| {
-            let mut response = ui.allocate_response(egui::Vec2::ZERO, egui::Sense::empty());
+        ui.vertical(|ui| {
+            let mut maybe_response = MaybeResponse::default();
             match type_info {
                 TypeInfo::Struct(struct_info) => {
                     let r_struct = value.reflect_mut().as_struct().unwrap();
@@ -97,8 +100,8 @@ impl<'a> ReflectWidgetContext<'a> {
                                 continue;
                             };
 
-                            response |= ui.label(format!("{}:", field_name));
-                            response |= self.draw(ui, field);
+                            maybe_response |= ui.label(format!("{}:", field_name));
+                            maybe_response |= self.draw(ui, field);
 
                             ui.end_row();
                         }
@@ -115,24 +118,24 @@ impl<'a> ReflectWidgetContext<'a> {
                             continue;
                         };
 
-                        response |= self.draw(ui, field);
+                        maybe_response |= self.draw(ui, field);
                     }
                 }
                 TypeInfo::Tuple(_tuple_info) => {
-                    response |= ui.label("Tuples not implemented yet");
+                    maybe_response |= ui.label("Tuples not implemented yet");
                 }
                 TypeInfo::List(list_info) => {
-                    response |= handle_list(self, ui, value, list_info);
-                    response |= ui.label("Lists not implemented yet");
+                    maybe_response |= handle_list(self, ui, value, list_info);
+                    maybe_response |= ui.label("Lists not implemented yet");
                 }
                 TypeInfo::Array(_array_info) => {
-                    response |= ui.label("Arrays not implemented yet");
+                    maybe_response |= ui.label("Arrays not implemented yet");
                 }
                 TypeInfo::Map(_map_info) => {
-                    response |= ui.label("Maps not implemented yet");
+                    maybe_response |= ui.label("Maps not implemented yet");
                 }
                 TypeInfo::Set(_set_info) => {
-                    response |= ui.label("Sets not implemented yet");
+                    maybe_response |= ui.label("Sets not implemented yet");
                 }
                 TypeInfo::Enum(enum_info) => {
                     let r_enum = value.reflect_mut().as_enum().unwrap();
@@ -158,18 +161,18 @@ impl<'a> ReflectWidgetContext<'a> {
                                     .inner;
 
                                 if variant_response.changed() {
-                                    response.mark_changed();
+                                    maybe_response.mark_changed();
                                 }
                             }
                         },
                     );
 
-                    response |= picker_response.response;
+                    maybe_response |= picker_response.response;
 
-                    if response.changed()
+                    if maybe_response.changed()
                         && let Some(default_value) = self.default_variant(current_value, enum_info)
                     {
-                        response.mark_changed();
+                        maybe_response.mark_changed();
                         r_enum.apply(&default_value);
                     }
 
@@ -187,8 +190,8 @@ impl<'a> ReflectWidgetContext<'a> {
                                         continue;
                                     };
 
-                                    response |= ui.label(format!("{}:", field_name));
-                                    response |= self.draw(ui, field);
+                                    maybe_response |= ui.label(format!("{}:", field_name));
+                                    maybe_response |= self.draw(ui, field);
 
                                     ui.end_row();
                                 }
@@ -204,17 +207,19 @@ impl<'a> ReflectWidgetContext<'a> {
                                     continue;
                                 };
 
-                                response |= self.draw(ui, field);
+                                maybe_response |= self.draw(ui, field);
                             }
                         }
                         VariantType::Unit => {}
                     }
                 }
                 TypeInfo::Opaque(_opaque_info) => {
-                    response |= ui.label("Opaque not implemented yet");
+                    maybe_response |= ui.label("Opaque not implemented yet");
                 }
             }
-            response
+            maybe_response
+                .0
+                .unwrap_or_else(|| ui.allocate_rect(egui::Rect::ZERO, egui::Sense::empty()))
         })
         .inner
     }

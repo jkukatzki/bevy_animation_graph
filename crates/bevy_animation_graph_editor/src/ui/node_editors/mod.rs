@@ -3,8 +3,8 @@ use std::any::Any;
 use bevy::{app::App, ecs::world::World, reflect::FromType};
 use bevy_animation_graph::{
     builtin_nodes::{
-        blend_space_node::BlendSpaceNode, constants::Constants, global_input::GlobalInput,
-        ragdoll::const_ragdoll_config::ConstRagdollConfig,
+        blend_space_node::BlendSpaceNode, constants::Constants, flip_lr_node::FlipLRNode,
+        global_input::GlobalInput, ragdoll::const_ragdoll_config::ConstRagdollConfig,
     },
     core::animation_node::NodeLike,
 };
@@ -12,7 +12,9 @@ use bevy_animation_graph::{
 use crate::ui::node_editors::new_reflect_editor::NewReflectNodeEditor;
 
 pub mod blend_space;
+pub mod flip_lr;
 pub mod new_reflect_editor;
+pub mod proxy_reflect_editor;
 pub mod ragdoll_config;
 pub mod reflect_editor;
 
@@ -100,4 +102,5 @@ pub fn register_node_editables(app: &mut App) {
     app.register_type_data::<BlendSpaceNode, ReflectEditable>();
     app.register_type_data::<GlobalInput, ReflectEditable>();
     app.register_type_data::<Constants, ReflectEditable>();
+    app.register_type_data::<FlipLRNode, ReflectEditable>();
 }

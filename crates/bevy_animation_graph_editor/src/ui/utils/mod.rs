@@ -33,6 +33,7 @@ use crate::{
 };
 
 pub mod collapsing;
+pub mod maybe_response;
 pub mod popup;
 pub mod ui_buffer;
 
