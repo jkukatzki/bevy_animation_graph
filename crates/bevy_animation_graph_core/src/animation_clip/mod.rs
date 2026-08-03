@@ -1,7 +1,7 @@
 pub mod loader;
 
 use bevy::{
-    animation::{AnimationCurves, AnimationTargetId},
+    animation::{AnimationCurves, AnimationTargetId, animation_curves::AnimatableProperty},
     asset::{ReflectAsset, prelude::*},
     ecs::name::Name,
     platform::collections::HashMap,
@@ -183,6 +183,26 @@ impl GraphClip {
     /// Get mutable references of [`VariableCurve`]s for each animation target. Indexed by the [`AnimationTargetId`].
     pub fn curves_mut(&mut self) -> &mut AnimationCurves {
         &mut self.curves
+    }
+
+    /// Samples an animatable property for a target at `time`, using Bevy's
+    /// public 0.19 curve-sampling API. This mirrors
+    /// [`bevy::animation::AnimationClip::sample_clamped`] for graph clips.
+    pub fn sample_clamped<P: AnimatableProperty>(
+        &self,
+        animatable_property: P,
+        target: AnimationTargetId,
+        time: f32,
+    ) -> Option<P::Property> {
+        let curves = self.curves.get(&target)?;
+        for curve in curves {
+            if curve.0.evaluator_id() == animatable_property.evaluator_id()
+                && let Ok(sample) = curve.0.sample_clamped(time).downcast::<P::Property>()
+            {
+                return Some(*sample);
+            }
+        }
+        None
     }
 
     /// Duration of the clip, represented in seconds.

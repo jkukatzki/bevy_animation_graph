@@ -5,7 +5,7 @@ use bevy::{
     asset::Handle,
     math::{Quat, Vec3},
     platform::hash::Hashed,
-    prelude::{EvaluatorId, Transform, VariableCurve},
+    prelude::{AnimatedField, EvaluatorId, Transform, VariableCurve},
     reflect::prelude::*,
 };
 use bevy_animation_graph_core::{
@@ -152,15 +152,33 @@ impl NodeLike for ClipNode {
 
         for (bone_id, curves) in &clip.curves {
             let mut bone_pose = BonePose::default();
+            let target = *bone_id;
+            bone_pose.translation = clip.sample_clamped(
+                bevy::animation::animated_field!(Transform::translation),
+                target,
+                clamped_time,
+            );
+            bone_pose.rotation = clip.sample_clamped(
+                bevy::animation::animated_field!(Transform::rotation),
+                target,
+                clamped_time,
+            );
+            bone_pose.scale = clip.sample_clamped(
+                bevy::animation::animated_field!(Transform::scale),
+                target,
+                clamped_time,
+            );
             for curve in curves {
+                if !matches!(curve.0.evaluator_id(), EvaluatorId::Type(_)) {
+                    continue;
+                }
                 let Some(value) = sample_animation_curve(curve, clamped_time) else {
                     continue;
                 };
                 match value {
-                    CurveValue::Translation(t) => bone_pose.translation = Some(t),
-                    CurveValue::Rotation(r) => bone_pose.rotation = Some(r),
-                    CurveValue::Scale(s) => bone_pose.scale = Some(s),
                     CurveValue::BoneWeights(w) => bone_pose.weights = Some(w),
+                    CurveValue::Translation(_) | CurveValue::Rotation(_) | CurveValue::Scale(_) => {
+                    }
                 }
             }
             out_pose.add_bone(bone_pose, BoneId::from(*bone_id));
@@ -380,15 +398,32 @@ pub fn sample_graph_clip_into_pose(
 
     for (bone_id, curves) in &clip.curves {
         let mut bone_pose = BonePose::default();
+        let target = *bone_id;
+        bone_pose.translation = clip.sample_clamped(
+            bevy::animation::animated_field!(Transform::translation),
+            target,
+            clamped_time,
+        );
+        bone_pose.rotation = clip.sample_clamped(
+            bevy::animation::animated_field!(Transform::rotation),
+            target,
+            clamped_time,
+        );
+        bone_pose.scale = clip.sample_clamped(
+            bevy::animation::animated_field!(Transform::scale),
+            target,
+            clamped_time,
+        );
         for curve in curves {
+            if !matches!(curve.0.evaluator_id(), EvaluatorId::Type(_)) {
+                continue;
+            }
             let Some(value) = sample_animation_curve(curve, clamped_time) else {
                 continue;
             };
             match value {
-                CurveValue::Translation(t) => bone_pose.translation = Some(t),
-                CurveValue::Rotation(r) => bone_pose.rotation = Some(r),
-                CurveValue::Scale(s) => bone_pose.scale = Some(s),
                 CurveValue::BoneWeights(w) => bone_pose.weights = Some(w),
+                CurveValue::Translation(_) | CurveValue::Rotation(_) | CurveValue::Scale(_) => {}
             }
         }
         out_pose.add_bone(bone_pose, BoneId::from(*bone_id));
