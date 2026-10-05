@@ -3,10 +3,10 @@ use avian3d::prelude::PhysicsSystems;
 use bevy::{
     animation::AnimationClip,
     app::{App, Plugin, PreUpdate},
-    asset::{AssetApp, AssetEvent, Assets},
+    asset::{AssetApp, Assets},
     ecs::{
+        change_detection::DetectChanges,
         intern::Interned,
-        message::MessageReader,
         schedule::{IntoScheduleConfigs, ScheduleLabel, SystemSet},
         system::{Res, ResMut},
     },
@@ -233,16 +233,12 @@ pub fn resolve_pending_graph_clips(
     mut graph_clips: ResMut<Assets<GraphClip>>,
     gltf_assets: Res<Assets<Gltf>>,
     anim_clips: Res<Assets<AnimationClip>>,
-    mut gltf_events: MessageReader<AssetEvent<Gltf>>,
 ) {
-    // Only run when at least one GLTF has newly finished loading.
-    let any_gltf_loaded = gltf_events.read().any(|e| {
-        matches!(
-            e,
-            AssetEvent::Added { .. } | AssetEvent::LoadedWithDependencies { .. }
-        )
-    });
-    if !any_gltf_loaded {
+    // A graph clip can arrive after its shared GLTF has already loaded. Also
+    // retry when an AnimationClip sub-asset becomes available independently.
+    // GLTF events alone leave those clips pending indefinitely on a warm cache
+    // or when HTTP requests complete in a different order.
+    if !graph_clips.is_changed() && !gltf_assets.is_changed() && !anim_clips.is_changed() {
         return;
     }
 
@@ -263,7 +259,7 @@ pub fn resolve_pending_graph_clips(
         };
 
         let Some(gltf) = gltf_assets.get(pending.gltf_handle.id()) else {
-            // GLTF not ready yet — will be retried next time a GLTF loads.
+            // GLTF not ready yet — retry when any source collection changes.
             continue;
         };
 
@@ -281,7 +277,7 @@ pub fn resolve_pending_graph_clips(
         };
 
         let Some(bevy_clip) = anim_clips.get(clip_handle.id()) else {
-            // AnimationClip sub-asset not yet available; retry next event.
+            // AnimationClip sub-asset not yet available; retry when it arrives.
             continue;
         };
 
