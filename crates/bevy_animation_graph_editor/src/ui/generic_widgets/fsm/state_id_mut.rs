@@ -17,7 +17,7 @@ impl<'a> StateIdWidget<'a> {
         }
     }
 
-    pub fn salted(mut self, salt: impl std::hash::Hash) -> Self {
+    pub fn salted(mut self, salt: impl std::hash::Hash + std::fmt::Debug) -> Self {
         self.id_hash = egui::Id::new(salt);
         self
     }
@@ -96,7 +96,7 @@ fn picker(ui: &mut egui::Ui, body_id: &mut StateId, fsm: &StateMachine) -> egui:
 // }
 //
 // impl<'a> BodyIdReadonlyWidget<'a> {
-//     pub fn new_salted(body_id: &'a BodyId, salt: impl std::hash::Hash) -> Self {
+//     pub fn new_salted(body_id: &'a BodyId, salt: impl std::hash::Hash + std::fmt::Debug) -> Self {
 //         Self {
 //             body_id,
 //             id_hash: egui::Id::new(salt),

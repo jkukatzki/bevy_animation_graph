@@ -9,7 +9,7 @@ pub struct BodyIdWidget<'a> {
 }
 
 impl<'a> BodyIdWidget<'a> {
-    pub fn new_salted(body_id: &'a mut BodyId, salt: impl std::hash::Hash) -> Self {
+    pub fn new_salted(body_id: &'a mut BodyId, salt: impl std::hash::Hash + std::fmt::Debug) -> Self {
         Self {
             body_id,
             id_hash: egui::Id::new(salt),

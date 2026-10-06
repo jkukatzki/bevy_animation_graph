@@ -16,7 +16,7 @@ pub struct DataValueWidget<'a> {
 }
 
 impl<'a> DataValueWidget<'a> {
-    pub fn new_salted(data_value: &'a mut DataValue, salt: impl std::hash::Hash) -> Self {
+    pub fn new_salted(data_value: &'a mut DataValue, salt: impl std::hash::Hash + std::fmt::Debug) -> Self {
         Self {
             data_value,
             id_hash: egui::Id::new(salt),

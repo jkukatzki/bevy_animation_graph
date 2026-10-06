@@ -10,7 +10,6 @@ keywords = ["bevy", "animation", "gamedev", "editor", "graph"]
 
 [dependencies]
 bevy = { workspace = true, features = [
-    "file_watcher",
     "wayland",
     "reflect_documentation",
 ] }
@@ -35,3 +34,6 @@ bitflags = "2.10.0"
 [features]
 default = ["physics_avian"]
 physics_avian = ["dep:avian3d", "bevy_animation_graph/physics_avian"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+bevy = { workspace = true, features = ["file_watcher"] }

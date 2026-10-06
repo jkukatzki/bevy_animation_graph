@@ -12,7 +12,7 @@ pub struct IoSpecWidget<'a, I> {
 }
 
 impl<'a, I> IoSpecWidget<'a, I> {
-    pub fn new_salted(io_spec: &'a mut IoSpec<I>, salt: impl std::hash::Hash) -> Self {
+    pub fn new_salted(io_spec: &'a mut IoSpec<I>, salt: impl std::hash::Hash + std::fmt::Debug) -> Self {
         Self {
             io_spec,
             id_hash: egui::Id::new(salt),

@@ -143,6 +143,7 @@ impl Tree<(Entity, Vec<Name>), (Entity, Vec<Name>)> {
 }
 
 #[derive(Clone, Hash, PartialEq)]
+#[derive(Debug)]
 pub struct SkeletonNode {
     pub bone_id: BoneId,
 }

@@ -111,9 +111,16 @@ impl UiState {
         queue: &mut PendingActions,
         command_queue: &mut CommandQueue,
     ) {
-        menu_bar(ctx, command_queue);
+        let mut viewport_ui = egui::Ui::new(
+            ctx.clone(),
+            egui::Id::new("animation_graph_editor"),
+            egui::UiBuilder::new()
+                .layer_id(egui::LayerId::background())
+                .max_rect(ctx.content_rect()),
+        );
+        menu_bar(&mut viewport_ui, command_queue);
 
-        if let Some(view_action) = view_selection_bar(world, ctx, self) {
+        if let Some(view_action) = view_selection_bar(world, &mut viewport_ui, self) {
             queue.actions.push(EditorAction::View(view_action));
         }
 
@@ -134,16 +141,16 @@ impl UiState {
                 view_entity: view_state.entity,
                 command_queue,
             };
-            view_state.ui(ctx, world, view_context);
+            view_state.ui(&mut viewport_ui, world, view_context);
         }
 
         self.notifications.show(ctx);
     }
 }
 
-fn menu_bar(ctx: &mut egui::Context, command_queue: &mut CommandQueue) {
+fn menu_bar(ui: &mut egui::Ui, command_queue: &mut CommandQueue) {
     #[allow(deprecated)]
-    egui::Panel::top("Application menu bar").show(ctx, |ui| {
+    egui::Panel::top("Application menu bar").show(ui, |ui| {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("Assets", |ui| {
                 ui.menu_button("Create", |ui| {
@@ -222,12 +229,12 @@ pub enum ViewAction {
 
 fn view_selection_bar(
     world: &mut World,
-    ctx: &mut egui::Context,
+    ui: &mut egui::Ui,
     ui_state: &UiState,
 ) -> Option<ViewAction> {
     #[allow(deprecated)]
     egui::Panel::top("View selector")
-        .show(ctx, |ui| {
+        .show(ui, |ui| {
             ui.horizontal(|ui| {
                 let mut action = None;
                 for (i, view) in ui_state.views.iter().enumerate() {

@@ -15,16 +15,19 @@ bevy_animation_graph = { version = "0.11.0", path = "./crates/bevy_animation_gra
 bevy_animation_graph_core = { version = "0.11.0", path = "./crates/bevy_animation_graph_core" }
 bevy_animation_graph_builtin_nodes = { version = "0.11.0", path = "./crates/bevy_animation_graph_builtin_nodes" }
 
-bevy = { version = "0.19" }
-avian3d = { version = "0.7" }
+bevy = { version = "=0.20.0-rc.2" }
+avian3d = { git = "https://github.com/andriyDev/avian", rev = "34c9b008d2f40638a953d9218db48d54f661365d" }
 
-egui_dock = "0.19"
-egui-notify = { version = "0.22" }
-egui = { version = "0.34" }
-egui_extras = { version = "0.34", features = ["all_loaders"] }
-bevy_egui = { version = "0.40.0" }
-bevy-inspector-egui = { version = "0.37" }
+egui_dock = "0.21"
+egui-notify = { version = "0.23" }
+egui = { version = "0.36" }
+egui_extras = { version = "0.36", features = ["all_loaders"] }
+bevy_egui = { version = "=0.43.0-rc.1" }
+bevy-inspector-egui = { git = "https://github.com/taboky-dev/bevy-inspector-egui", rev = "6c4689637f289647ecad5897da35c29032fcc086" }
 
 ron = "0.10.1"
 serde = "1.0"
 rand = "0.10"
+
+[patch."https://github.com/taboky-dev/bevy_egui.git"]
+bevy_egui = { version = "=0.43.0-rc.1" }

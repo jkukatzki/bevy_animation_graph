@@ -17,7 +17,7 @@ impl<'a> BoneIdWidget<'a> {
         }
     }
 
-    pub fn salted(mut self, salt: impl std::hash::Hash) -> Self {
+    pub fn salted(mut self, salt: impl std::hash::Hash + std::fmt::Debug) -> Self {
         self.id_hash = egui::Id::new(salt);
         self
     }

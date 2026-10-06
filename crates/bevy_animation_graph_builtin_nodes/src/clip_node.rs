@@ -5,7 +5,7 @@ use bevy::{
     asset::Handle,
     math::{Quat, Vec3},
     platform::hash::Hashed,
-    prelude::{AnimatedField, EvaluatorId, Transform, VariableCurve},
+    prelude::{EvaluatorId, Transform, VariableCurve},
     reflect::prelude::*,
 };
 use bevy_animation_graph_core::{

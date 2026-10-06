@@ -43,7 +43,7 @@ where
     C: Default + Clone + Send + Sync + 'static,
     H: HashLikeEditable<K, V, C>,
 {
-    pub fn new_salted(map: &'a mut H, salt: impl std::hash::Hash) -> Self {
+    pub fn new_salted(map: &'a mut H, salt: impl std::hash::Hash + std::fmt::Debug) -> Self {
         Self {
             map,
             id_hash: egui::Id::new(salt),

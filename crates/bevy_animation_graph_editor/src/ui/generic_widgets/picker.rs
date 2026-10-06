@@ -3,7 +3,7 @@ pub struct PickerWidget {
 }
 
 impl PickerWidget {
-    pub fn new_salted(salt: impl std::hash::Hash) -> Self {
+    pub fn new_salted(salt: impl std::hash::Hash + std::fmt::Debug) -> Self {
         Self {
             id_hash: egui::Id::new(salt),
         }

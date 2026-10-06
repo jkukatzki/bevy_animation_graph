@@ -18,7 +18,7 @@ impl<'a, A: Asset> AssetPicker<'a, A> {
     pub fn new_salted(
         handle: &'a mut Handle<A>,
         world: &'a mut World,
-        salt: impl std::hash::Hash,
+        salt: impl std::hash::Hash + std::fmt::Debug,
     ) -> Self {
         Self {
             handle,

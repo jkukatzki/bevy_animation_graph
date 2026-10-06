@@ -54,7 +54,7 @@ impl Plugin for AnimationGraphEditorPlugin {
                             .unwrap()
                             .to_string_lossy()
                             .into(),
-                        watch_for_changes_override: Some(true),
+                        watch_for_changes_override: Some(!cfg!(target_arch = "wasm32")),
                         ..Default::default()
                     })
                     .set(WindowPlugin {

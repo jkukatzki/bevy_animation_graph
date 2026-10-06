@@ -10,7 +10,7 @@ pub struct Isometry3dWidget<'a> {
 }
 
 impl<'a> Isometry3dWidget<'a> {
-    pub fn new_salted(isometry: &'a mut Isometry3d, salt: impl std::hash::Hash) -> Self {
+    pub fn new_salted(isometry: &'a mut Isometry3d, salt: impl std::hash::Hash + std::fmt::Debug) -> Self {
         Self {
             isometry,
             slider_step_size: 0.1,
