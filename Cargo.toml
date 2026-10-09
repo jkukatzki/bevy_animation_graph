@@ -15,7 +15,7 @@ bevy_animation_graph = { version = "0.11.0", path = "./crates/bevy_animation_gra
 bevy_animation_graph_core = { version = "0.11.0", path = "./crates/bevy_animation_graph_core" }
 bevy_animation_graph_builtin_nodes = { version = "0.11.0", path = "./crates/bevy_animation_graph_builtin_nodes" }
 
-bevy = { version = "=0.20.0-rc.2" }
+bevy = { version = "=0.20.0" }
 avian3d = { git = "https://github.com/andriyDev/avian", rev = "34c9b008d2f40638a953d9218db48d54f661365d" }
 
 egui_dock = "0.21"
