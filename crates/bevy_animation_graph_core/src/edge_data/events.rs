@@ -19,6 +19,8 @@ pub enum AnimationEvent {
     ///
     /// If multiple states share the same label, no guarantees are given as to which is chosen.
     TransitionToStateLabel(String),
+    /// Override a timed transition for this request without changing the FSM asset.
+    TransitionToStateLabelOver { label: String, duration: std::time::Duration },
     /// Trigger a specific transition (if possible)
     Transition(TransitionId),
     EndTransition,

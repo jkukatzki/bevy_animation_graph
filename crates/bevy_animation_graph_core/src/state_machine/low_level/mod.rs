@@ -82,6 +82,7 @@ pub enum FsmBuiltinPin {
 pub struct FsmState {
     pub state: LowLevelStateId,
     pub state_entered_time: f32,
+    pub transition_duration: Option<f32>,
 }
 
 #[derive(Reflect, Debug, Clone)]
@@ -192,6 +193,7 @@ impl LowLevelStateMachine {
         *fsm_state = FsmState {
             state: transition.target.clone(),
             state_entered_time: time,
+            transition_duration: None,
         };
     }
 
@@ -206,6 +208,7 @@ impl LowLevelStateMachine {
         let fsm_state = ctx.state_mut_or_else(|| FsmState {
             state: self.start_state.clone().unwrap(),
             state_entered_time: time,
+            transition_duration: None,
         })?;
 
         let mut should_clear: Option<(AssetId<AnimationGraph>, LowLevelStateId)> = None;
@@ -236,6 +239,18 @@ impl LowLevelStateMachine {
                         )
                     {
                         self.trigger_transition(transition, time, fsm_state, &mut should_clear);
+                    }
+                }
+                AnimationEvent::TransitionToStateLabelOver { label, duration } => {
+                    if let Some(target) = self.hl_states_by_label.get(&label).and_then(|s| s.first())
+                        && let LowLevelStateId::HlState(source) = fsm_state.state.clone()
+                        && let Some(transition) = self.find_hl_transition_start(source, *target, is_external)
+                    {
+                        self.trigger_transition(transition, time, fsm_state, &mut should_clear);
+                        if self.states.get(&fsm_state.state)
+                            .and_then(|s| s.hl_transition.as_ref()).is_some_and(|t| t.timed.is_some()) {
+                            fsm_state.transition_duration = Some(duration.as_secs_f32());
+                        }
                     }
                 }
                 AnimationEvent::Transition(transition_id) => {
@@ -330,10 +345,8 @@ impl LowLevelStateMachine {
 
         let mut driver_event_queue = EventQueue::default();
 
-        if let Some(duration) = state.hl_transition.as_ref().and_then(|t| t.timed)
-            && duration > 0.
-        {
-            let percent = elapsed_time / duration;
+        if let Some(duration) = fsm_state.transition_duration.or_else(|| state.hl_transition.as_ref().and_then(|t| t.timed)) {
+            let percent = transition_fraction(elapsed_time, duration);
             io_overrides
                 .data
                 .insert(FsmBuiltinPin::PercentThroughDuration.into(), percent.into());
@@ -403,10 +416,8 @@ impl LowLevelStateMachine {
 
         let mut driver_event_queue = EventQueue::default();
 
-        if let Some(duration) = state.hl_transition.as_ref().and_then(|t| t.timed)
-            && duration > 0.
-        {
-            let percent = elapsed_time / duration;
+        if let Some(duration) = fsm_state.transition_duration.or_else(|| state.hl_transition.as_ref().and_then(|t| t.timed)) {
+            let percent = transition_fraction(elapsed_time, duration);
             io_overrides
                 .data
                 .insert(FsmBuiltinPin::PercentThroughDuration.into(), percent.into());
@@ -680,4 +691,9 @@ pub enum StateRole {
     Source,
     Target,
     Root,
+}
+
+/// Zero-duration requests finish in the same graph evaluation.
+fn transition_fraction(elapsed: f32, duration: f32) -> f32 {
+    if duration <= 0.0 { 1.0 } else { (elapsed / duration).clamp(0.0, 1.0) }
 }
