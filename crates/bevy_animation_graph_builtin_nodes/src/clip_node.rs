@@ -118,11 +118,17 @@ impl NodeLike for ClipNode {
         };
 
         // Clip loaded but curves not yet extracted from GLTF — return empty pose.
+        // The skeleton is already known: downstream nodes that resolve it must
+        // not fail on a pose produced while the GLTF is still loading.
         if clip.pending_gltf_source.is_some() {
             let time_update = ctx.time_update_fwd()?;
             let _ = time_update; // consume the input
             ctx.set_time(0.0);
-            ctx.set_data_fwd(Self::OUT_POSE, DataValue::Pose(Pose::default()));
+            let pose = Pose {
+                skeleton: clip.skeleton.clone(),
+                ..Pose::default()
+            };
+            ctx.set_data_fwd(Self::OUT_POSE, DataValue::Pose(pose));
             ctx.set_data_fwd(
                 Self::OUT_EVENT_QUEUE,
                 DataValue::EventQueue(EventQueue::default()),
