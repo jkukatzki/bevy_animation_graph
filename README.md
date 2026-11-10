@@ -15,6 +15,59 @@ _Editor crate:_
 > [migration guide](https://mbrea-c.github.io/bevy_animation_graph/migration_guides/0.8_to_0.9.html)
 > for upgrading.
 
+## Fork notes (jkukatzki/bevy_animation_graph)
+
+This branch tracks upstream `master` (up to #153) and adds the following.
+
+### Differences from upstream
+
+- **Bevy 0.20** (and the matching `bevy_egui`).
+- **Deferred glTF clip resolution:** `GltfNamed` graph clips no longer block on
+  the glTF load. `resolve_pending_graph_clips` fills in their curves once the
+  glTF and its animation sub-assets are ready, retrying on any asset change.
+  `ClipNode` keeps the pose's skeleton while the clip is still pending.
+- **`GraphNodeResources`:** a type map that apps fill with their own data
+  (e.g. lookup tables) so custom nodes can read it during graph evaluation.
+- **Timed state transitions on demand:** `AnimationEvent::TransitionToStateLabelOver`
+  overrides a timed transition's duration; `FsmState::transition_duration`
+  stores it.
+- **Runtime transition source** (see below): `FsmState::transition_source`.
+- **Clip sampling** uses `sample_clamped` (`GraphClip::sample_clamped`).
+- **Editor:** responsive inspector columns, optional max popup width,
+  Cmd+Backspace to delete on macOS, a fix for a `DragValue` panic on
+  non-finite values, and the node inspector scoped to the graph asset.
+
+### Why the transition-source fix was needed
+
+A state's `state_transition` is a transition from *any* state into that state.
+The high-level → low-level FSM conversion creates **one** low-level transition
+state (`HlTransition(TransitionId::State(target))`) and one start transition
+(`Start(TransitionId::State(target))`) per target. It does that once for every
+possible source, though, and each pass overwrote the previous one under the
+same id. The stored `LlTransitionData::source` and `LowLevelTransition::hl_source`
+therefore ended up as whichever source the `HashMap` visited last.
+
+`FromFsmSource` pins resolved through that static source. So an "any → jump"
+blend did not blend from the state you were actually in (e.g. `idle`). It
+blended from an arbitrary state, `float` in our case, and that state's pose
+flashed for the first frames of the blend. Explicit (direct) transitions were
+not affected, because they have one id per source/target pair.
+
+### How the fix changes things
+
+- `FsmState` gains `transition_source: Option<StateId>`. When a transition into
+  a transition state fires, it records the high-level state the FSM is
+  actually leaving. If the FSM is already mid-transition, it falls back to the
+  transition's `hl_source`.
+- `FsmIoEnv` carries the active transition state and its runtime source.
+  `FromFsmSource` data, duration and time lookups for that transition use it
+  instead of the static source. Nested state lookups keep the old behaviour.
+- State transitions now blend from the real previous state's pose. Direct
+  transitions behave exactly as before.
+- **Breaking for code that builds `FsmState` by hand:** add
+  `transition_source: None` (or the correct source when starting a transition
+  manually).
+
 ## Motivation
 
 Animation graphs are an essential tool for managing the complexity present in

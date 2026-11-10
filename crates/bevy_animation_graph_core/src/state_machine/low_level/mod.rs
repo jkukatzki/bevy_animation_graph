@@ -83,6 +83,12 @@ pub struct FsmState {
     pub state: LowLevelStateId,
     pub state_entered_time: f32,
     pub transition_duration: Option<f32>,
+    /// High-level state a running transition actually started from.
+    ///
+    /// A state transition ("from any state") has a single low-level state per
+    /// target, so its static [`LlTransitionData::source`] is just one of the
+    /// possible sources; this records the real one for `FromFsmSource` pins.
+    pub transition_source: Option<high_level::StateId>,
 }
 
 #[derive(Reflect, Debug, Clone)]
@@ -190,10 +196,19 @@ impl LowLevelStateMachine {
         {
             *should_clear = Some((target_state.graph.id(), ll_target_state_id));
         }
+        // State transitions ("from any state") share one low-level transition
+        // per target, so `hl_source` is only one of the possible sources: take
+        // the state we are actually leaving.
+        let source = match fsm_state.state {
+            LowLevelStateId::HlState(current) => current,
+            LowLevelStateId::HlTransition(_) => transition.hl_source,
+        };
         *fsm_state = FsmState {
             state: transition.target.clone(),
             state_entered_time: time,
             transition_duration: None,
+            transition_source: matches!(transition.target, LowLevelStateId::HlTransition(_))
+                .then_some(source),
         };
     }
 
@@ -209,6 +224,7 @@ impl LowLevelStateMachine {
             state: self.start_state.clone().unwrap(),
             state_entered_time: time,
             transition_duration: None,
+            transition_source: None,
         })?;
 
         let mut should_clear: Option<(AssetId<AnimationGraph>, LowLevelStateId)> = None;
@@ -366,6 +382,9 @@ impl LowLevelStateMachine {
                 current_state: state.id.clone(),
                 current_state_role: StateRole::Root,
                 state_stack: [].into(),
+                active_source: fsm_state
+                    .transition_source
+                    .map(|source| (state.id.clone(), source)),
             }),
         );
 
@@ -437,6 +456,9 @@ impl LowLevelStateMachine {
                 current_state: state.id.clone(),
                 current_state_role: StateRole::Root,
                 state_stack: [].into(),
+                active_source: fsm_state
+                    .transition_source
+                    .map(|source| (state.id.clone(), source)),
             }),
         );
 
@@ -476,9 +498,19 @@ pub struct FsmIoEnv<'a> {
     current_state: LowLevelStateId,
     current_state_role: StateRole,
     state_stack: VecDeque<(LowLevelStateId, StateRole)>,
+    /// The active low-level transition state and the state it started from.
+    active_source: Option<(LowLevelStateId, high_level::StateId)>,
 }
 
 impl<'a> FsmIoEnv<'a> {
+    /// Source of `state`, preferring the runtime source of the active transition.
+    fn source_of(&self, state: &LowLevelStateId) -> Result<LowLevelStateId, GraphError> {
+        match &self.active_source {
+            Some((active, source)) if active == state => Ok(LowLevelStateId::HlState(*source)),
+            _ => self.state_machine.get_source(state),
+        }
+    }
+
     const MISSING_STATE_ERROR_MESSAGE: &'static str =
         "Queried state does not exist. This is an internal error, please submit a GitHub issue.";
     fn parent_graph_data_back(
@@ -518,6 +550,7 @@ impl<'a> FsmIoEnv<'a> {
         next_state_stack.push_back((self.current_state.clone(), self.current_state_role));
 
         let sub_graph_io = FsmIoEnv {
+            active_source: self.active_source.clone(),
             node_context: self.node_context.clone(),
             state_machine: self.state_machine,
             current_state: next_state.clone(),
@@ -570,6 +603,7 @@ impl<'a> FsmIoEnv<'a> {
         next_state_stack.push_back((self.current_state.clone(), self.current_state_role));
 
         let sub_graph_io = FsmIoEnv {
+            active_source: self.active_source.clone(),
             node_context: self.node_context.clone(),
             state_machine: self.state_machine,
             current_state: state.clone(),
@@ -612,6 +646,7 @@ impl<'a> FsmIoEnv<'a> {
                 .ok_or(GraphError::FSMGraphAssetMissing)?;
 
             let sub_graph_io = FsmIoEnv {
+                active_source: self.active_source.clone(),
                 node_context: self.node_context.clone(),
                 state_machine: self.state_machine,
                 current_state: next_state.clone(),
@@ -648,8 +683,7 @@ impl<'a> GraphIoEnv for FsmIoEnv<'a> {
         match graph_input_pin {
             GraphInputPin::Passthrough(pin_id) => self.parent_graph_data_back(&pin_id, &ctx),
             GraphInputPin::FromFsmSource(pin_id) => self
-                .state_machine
-                .get_source(&self.current_state)
+                .source_of(&self.current_state)
                 .and_then(|state| self.state_data_back(pin_id, &ctx, state, StateRole::Source)),
             GraphInputPin::FromFsmTarget(pin_id) => self
                 .state_machine
@@ -668,8 +702,7 @@ impl<'a> GraphIoEnv for FsmIoEnv<'a> {
         match graph_input_pin {
             GraphInputPin::Passthrough(pin_id) => self.parent_graph_duration_back(&pin_id, &ctx),
             GraphInputPin::FromFsmSource(_) => self
-                .state_machine
-                .get_source(&self.current_state)
+                .source_of(&self.current_state)
                 .and_then(|state| self.state_duration_back(&ctx, state, StateRole::Source)),
             GraphInputPin::FromFsmTarget(_) => self
                 .state_machine
