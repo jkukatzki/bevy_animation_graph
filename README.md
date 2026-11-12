@@ -33,6 +33,20 @@ This branch tracks upstream `master` (up to #153) and adds the following.
   stores it.
 - **Runtime transition source** (see below): `FsmState::transition_source`.
 - **Clip sampling** uses `sample_clamped` (`GraphClip::sample_clamped`).
+- **`SpeedNode` timestamp guard:** below `SpeedNode::MIN_TIMESTAMP_SPEED`
+  (1e-3) the output timestamp is no longer divided by the speed. Near-zero
+  speeds produced timestamps so large that f32 could not represent frame-sized
+  steps, which froze anything synced to them (e.g. an `Absolute`-synced blend).
+- **`AnimationUpdateRate`:** an optional component that evaluates a player's
+  graph every `interval` seconds (staggered by `phase`) instead of every
+  frame, e.g. for distant characters. Deltas accumulate between updates;
+  skipped frames skip graph evaluation, the entity map and bone writes, and
+  report no root motion. `interpolate` blends bones between the last two
+  evaluated poses on the frames in between.
+- **Cached entity map:** rebuilt only when `Children` or `Name` change on the
+  root or a mapped entity, not every frame.
+- **`apply_animation_to_targets`** writes bone transforms with `set_if_neq`,
+  so unchanged bones keep their change ticks.
 - **Editor:** responsive inspector columns, optional max popup width,
   Cmd+Backspace to delete on macOS, a fix for a `DragValue` panic on
   non-finite values, and the node inspector scoped to the graph asset.

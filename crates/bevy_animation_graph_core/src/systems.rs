@@ -2,7 +2,9 @@ use std::collections::VecDeque;
 
 use bevy::{
     ecs::prelude::*, gizmos::gizmos::Gizmos, log::info_span, math::prelude::*,
-    mesh::morph::MorphWeights, platform::collections::HashMap, reflect::prelude::*,
+    mesh::morph::MorphWeights,
+    platform::collections::{HashMap, HashSet},
+    reflect::prelude::*,
     time::prelude::*, transform::prelude::*,
 };
 
@@ -10,7 +12,7 @@ use crate::{
     animated_scene::AnimatedSceneInstance,
     animation_clip::EntityPath,
     animation_graph::TimeUpdate,
-    animation_graph_player::{AnimationGraphPlayer, PlaybackState},
+    animation_graph_player::{AnimationGraphPlayer, AnimationUpdateRate, PlaybackState},
     context::system_resources::SystemResources,
     pose::BoneId,
 };
@@ -145,13 +147,27 @@ fn build_entity_map(root_entity: Entity, resources: &SystemResources) -> HashMap
 #[allow(clippy::too_many_arguments)]
 pub fn animation_player(
     time: Res<Time>,
-    mut animation_players: Query<(Entity, &mut AnimationGraphPlayer)>,
+    mut animation_players: Query<(
+        Entity,
+        &mut AnimationGraphPlayer,
+        Option<&AnimationUpdateRate>,
+    )>,
     sysres: SystemResources,
+    changed_hierarchy: Query<Entity, Or<(Changed<Children>, Changed<Name>)>>,
+    mut removed_children: RemovedComponents<Children>,
 ) {
-    animation_players.par_iter_mut().for_each(|(root, player)| {
-        run_animation_player(root, player, &time, &sysres);
-    });
-    animation_players.par_iter_mut().for_each(|(_, player)| {
+    // Entities whose children or names changed: players mapping any of them
+    // rebuild their entity map before their next update.
+    let hierarchy_changes: HashSet<Entity> = changed_hierarchy
+        .iter()
+        .chain(removed_children.read())
+        .collect();
+    animation_players
+        .par_iter_mut()
+        .for_each(|(root, player, rate)| {
+            run_animation_player(root, player, rate, &time, &sysres, &hierarchy_changes);
+        });
+    animation_players.par_iter_mut().for_each(|(_, player, _)| {
         debug_draw_animation_players(player, &sysres);
     });
 }
@@ -171,33 +187,83 @@ pub fn animation_player_deferred_gizmos(
 pub fn run_animation_player(
     root: Entity,
     mut player: Mut<AnimationGraphPlayer>,
+    rate: Option<&AnimationUpdateRate>,
     time: &Time,
     system_resources: &SystemResources,
+    hierarchy_changes: &HashSet<Entity>,
 ) {
     let _run_animation_player_span = info_span!("run_animation_player").entered();
 
-    // The entity map is updated regardless of animation type.
-    // Important as the entity map is relied upon for e.g. debug bone drawing
+    // Checked every frame, even skipped ones, so no change goes unnoticed.
+    if player.entity_map.is_empty()
+        || (!hierarchy_changes.is_empty()
+            && (hierarchy_changes.contains(&root)
+                || player
+                    .entity_map
+                    .values()
+                    .any(|entity| hierarchy_changes.contains(entity))))
     {
-        let _entity_map_span = info_span!("build_entity_map").entered();
-        player.entity_map = build_entity_map(root, system_resources);
+        player.entity_map_dirty = true;
     }
 
     if !player.animation.is_graph() {
+        rebuild_entity_map_if_dirty(root, &mut player, system_resources);
+        player.skipped_this_frame = false;
+        player.interpolation_alpha = None;
         return;
     }
 
+    let delta = time.delta_secs();
     if !player.is_paused() {
-        player.queue_time_update(TimeUpdate::Delta(time.delta_secs()));
+        player.queue_time_update(TimeUpdate::Delta(delta));
     }
+    player.since_update += delta;
+
+    let mut clock = player.update_clock;
+    let slot = rate.is_none_or(|rate| rate.advance(&mut clock, delta));
+    player.update_clock = clock;
+    let due = slot
+        || player.get_default_output_pose().is_none()
+        || matches!(player.playback_state(), PlaybackState::PlayOneFrame);
+    let interpolate = rate.filter(|rate| rate.interpolate && rate.interval > 0.0);
+
+    if !due {
+        // Deltas keep accumulating in `pending_update` until the next slot.
+        player.skipped_this_frame = true;
+        player.interpolation_alpha = match (interpolate, &player.previous_output_pose) {
+            (Some(rate), Some(_)) => Some((player.since_update / rate.interval).clamp(0.0, 1.0)),
+            _ => None,
+        };
+        return;
+    }
+
+    rebuild_entity_map_if_dirty(root, &mut player, system_resources);
+    let previous = interpolate.and_then(|_| player.get_default_output_pose().cloned());
 
     {
         let _update_span = info_span!("player_update").entered();
         player.update(system_resources, root);
     }
 
+    player.interpolation_alpha = previous.as_ref().map(|_| 0.0);
+    player.previous_output_pose = previous;
+    player.since_update = 0.0;
+    player.skipped_this_frame = false;
+
     if matches!(player.playback_state(), PlaybackState::PlayOneFrame) {
         player.pause();
+    }
+}
+
+fn rebuild_entity_map_if_dirty(
+    root: Entity,
+    player: &mut AnimationGraphPlayer,
+    system_resources: &SystemResources,
+) {
+    if player.entity_map_dirty {
+        let _entity_map_span = info_span!("build_entity_map").entered();
+        player.entity_map = build_entity_map(root, system_resources);
+        player.entity_map_dirty = false;
     }
 }
 
@@ -215,6 +281,10 @@ pub fn apply_animation_to_targets(
         let Ok(player) = graph_players.get(animated_by.0) else {
             continue;
         };
+        // Nothing new to show: leave the bones (and their change ticks) alone.
+        if player.skipped_this_frame && player.interpolation_alpha.is_none() {
+            continue;
+        }
         let Some(pose) = player.get_default_output_pose() else {
             continue;
         };
@@ -224,16 +294,37 @@ pub fn apply_animation_to_targets(
         };
 
         let bone_pose = &pose.bones[*bone_index];
+        let previous = player
+            .interpolation_alpha
+            .zip(player.previous_output_pose.as_ref())
+            .and_then(|(alpha, previous)| {
+                let index = previous.paths.get(&target_bone_id)?;
+                Some((alpha, &previous.bones[*index]))
+            });
+
+        let mut transform = *target_transform;
         if let Some(rotation) = bone_pose.rotation {
-            target_transform.rotation = rotation;
+            transform.rotation = match previous.and_then(|(a, p)| Some((a, p.rotation?))) {
+                Some((alpha, from)) => from.slerp(rotation, alpha),
+                None => rotation,
+            };
         }
         if let Some(translation) = bone_pose.translation {
-            target_transform.translation = translation;
+            transform.translation = match previous.and_then(|(a, p)| Some((a, p.translation?))) {
+                Some((alpha, from)) => from.lerp(translation, alpha),
+                None => translation,
+            };
         }
         if let Some(scale) = bone_pose.scale {
-            target_transform.scale = scale;
+            transform.scale = match previous.and_then(|(a, p)| Some((a, p.scale?))) {
+                Some((alpha, from)) => from.lerp(scale, alpha),
+                None => scale,
+            };
         }
-        if let Some(weights) = &bone_pose.weights
+        // Unchanged bones keep their change ticks, sparing propagation work.
+        target_transform.set_if_neq(transform);
+        if !player.skipped_this_frame
+            && let Some(weights) = &bone_pose.weights
             && let Some(mut morphs) = target_morphs
         {
             apply_morph_weights(morphs.weights_mut(), weights);

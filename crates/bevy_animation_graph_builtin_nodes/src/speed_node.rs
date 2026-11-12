@@ -17,6 +17,8 @@ impl SpeedNode {
     pub const IN_TIME: &'static str = "time";
     pub const OUT_POSE: &'static str = "pose";
     pub const SPEED: &'static str = "speed";
+    /// Below this speed the output timestamp is passed through unscaled.
+    pub const MIN_TIMESTAMP_SPEED: f32 = 1e-3;
 
     pub fn new() -> Self {
         Self
@@ -49,7 +51,9 @@ impl NodeLike for SpeedNode {
         ctx.set_time_update_back(Self::IN_TIME, fw_upd);
         let mut in_pose = ctx.data_back(Self::IN_POSE)?.into_pose()?;
 
-        if speed != 0. {
+        // Near-zero speeds would blow the timestamp up to values where f32 can
+        // no longer represent frame-sized steps for anything synced to it.
+        if speed.abs() >= Self::MIN_TIMESTAMP_SPEED {
             in_pose.timestamp /= speed.abs();
         }
 

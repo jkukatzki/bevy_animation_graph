@@ -33,6 +33,47 @@ use crate::{
     space_conversion::SpaceConversionContext,
 };
 
+/// Evaluates a player's graph less often than every frame, e.g. for distant
+/// characters. Add it to the entity with the [`AnimationGraphPlayer`].
+///
+/// Frame deltas keep accumulating between updates, so clips and transitions
+/// keep their timing; they just advance in larger steps. Skipped frames also
+/// skip the entity map rebuild and the bone writes.
+#[derive(Component, Reflect, Clone, Copy, Debug, Default, PartialEq)]
+#[reflect(Component, Default)]
+pub struct AnimationUpdateRate {
+    /// Seconds between graph updates; zero or less updates every frame.
+    pub interval: f32,
+    /// Offset in [0, 1) of the update slot within the interval, so players
+    /// sharing an interval spread their updates across frames.
+    pub phase: f32,
+    /// Blend the bones from the previous to the latest evaluated pose on the
+    /// frames in between. Smooth, but shows the pose one interval late and
+    /// writes the bones every frame.
+    pub interpolate: bool,
+}
+
+impl AnimationUpdateRate {
+    /// Every frame, as without the component.
+    pub const EVERY_FRAME: Self = Self {
+        interval: 0.0,
+        phase: 0.0,
+        interpolate: false,
+    };
+
+    /// Advances `clock` by `dt` and reports whether an update slot was crossed.
+    pub fn advance(&self, clock: &mut f64, dt: f32) -> bool {
+        let before = *clock;
+        *clock += dt as f64;
+        if !(self.interval > 0.0) {
+            return true;
+        }
+        let interval = self.interval as f64;
+        let offset = self.phase.rem_euclid(1.0) as f64 * interval;
+        ((*clock + offset) / interval).floor() > ((before + offset) / interval).floor()
+    }
+}
+
 #[derive(Default, Reflect, Clone, Copy)]
 pub enum PlaybackState {
     Paused,
@@ -89,6 +130,19 @@ pub struct AnimationGraphPlayer {
     pub(crate) entity_map: HashMap<BoneId, Entity>,
     pub(crate) queued_events: EventQueue,
     pub(crate) outputs: HashMap<PinId, DataValue>,
+    /// The entity map must be rebuilt before the next graph update.
+    pub(crate) entity_map_dirty: bool,
+    /// Accumulated time for [`AnimationUpdateRate`] slots.
+    pub(crate) update_clock: f64,
+    /// Seconds since the graph was last evaluated.
+    pub(crate) since_update: f32,
+    /// [`AnimationUpdateRate`] skipped this frame's graph update.
+    pub(crate) skipped_this_frame: bool,
+    /// Output pose before the latest update, for interpolated update rates.
+    #[reflect(ignore)]
+    pub(crate) previous_output_pose: Option<Pose>,
+    /// Blend factor from `previous_output_pose` to the current pose this frame.
+    pub(crate) interpolation_alpha: Option<f32>,
 
     io_overrides: IoOverrides,
 
@@ -350,8 +404,18 @@ impl AnimationGraphPlayer {
     }
 
     /// Gets the root motion delta from the default output pose, if present.
+    /// `None` on frames whose graph update was skipped, so the delta of one
+    /// update is not applied again on the frames until the next.
     pub fn get_root_motion(&self) -> Option<&RootMotionDelta> {
+        if self.skipped_this_frame {
+            return None;
+        }
         self.get_default_output_pose()?.root_motion.as_ref()
+    }
+
+    /// Whether [`AnimationUpdateRate`] skipped this frame's graph update.
+    pub fn skipped_this_frame(&self) -> bool {
+        self.skipped_this_frame
     }
 
     pub fn set_default_output_pose(&mut self, pose: Pose) {
@@ -364,5 +428,27 @@ impl AnimationGraphPlayer {
 
     pub fn get_spawned_ragdoll(&self) -> Option<&SpawnedRagdoll> {
         self.spawned_ragdoll.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod update_rate_tests {
+    use super::AnimationUpdateRate;
+
+    /// Frames (of `frames` at 60 Hz) on which `rate` updates.
+    fn update_frames(rate: AnimationUpdateRate, frames: usize) -> Vec<usize> {
+        let mut clock = 0.0;
+        (0..frames)
+            .filter(|_| rate.advance(&mut clock, 1.0 / 60.0))
+            .collect()
+    }
+
+    #[test]
+    fn update_slots_follow_interval_and_phase() {
+        assert_eq!(update_frames(AnimationUpdateRate::EVERY_FRAME, 60).len(), 60);
+        let rate = |phase| AnimationUpdateRate { interval: 0.1, phase, interpolate: false };
+        assert_eq!(update_frames(rate(0.0), 60).len(), 10);
+        // Same rate, different phase: different frames.
+        assert_ne!(update_frames(rate(0.0), 12), update_frames(rate(0.5), 12));
     }
 }

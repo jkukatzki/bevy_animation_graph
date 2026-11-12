@@ -176,6 +176,7 @@ impl AnimationGraphCorePlugin {
         app //
             .register_type::<Interpolation>()
             .register_type::<AnimationGraphPlayer>()
+            .register_type::<crate::animation_graph_player::AnimationUpdateRate>()
             .register_type::<EntityPath>()
             .register_type::<BoneMask>()
             .register_type::<Pose>()
